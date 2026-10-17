@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <!-- Attribution: AI-assisted project; see README.md for development and attribution notes. -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Helios 3D — Interactive Solar System Explorer</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & Space Grotesk & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <!-- Three.js r128 & OrbitControls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Space Grotesk', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            space: {
+              950: '#030611',
+              900: '#070c1f',
+              800: '#0f172a',
+              700: '#1e293b',
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body class="relative w-full h-full overflow-hidden select-none">
+
+  <!-- 3D WebGL Canvas Container -->
+  <div id="canvas-container"></div>
+
+  <!-- Projected 2D HTML Labels Container -->
+  <div id="labels-container" class="fixed inset-0 pointer-events-none z-10 overflow-hidden"></div>
+
+  <!-- Projected 2D HTML Sub-Labels Container (Moons & Satellites of Selected Planet) -->
+  <div id="sublabels-container" class="fixed inset-0 pointer-events-none z-15 overflow-hidden"></div>
+
+  <!-- Top Navigation & Telemetry Header -->
+  <header class="fixed top-0 left-0 right-0 z-30 p-3 sm:p-4 pointer-events-none flex flex-wrap items-center justify-between gap-2">
+    <!-- Brand & Scale Approximation Pill -->
+    <div class="flex items-center gap-2 sm:gap-3 pointer-events-auto">
+      <div class="glass-panel px-3.5 py-2 rounded-2xl flex items-center gap-3">
+        <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 via-orange-500 to-red-600 flex items-center justify-center shadow-lg shadow-orange-500/30">
+          <i class="fa-solid fa-sun text-white text-sm animate-spin" style="animation-duration: 18s;"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-display font-bold text-sm sm:text-base tracking-tight text-white">HELIOS 3D</h1>
+            <span class="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-400/30">v2.4</span>
+          </div>
+          <p class="text-[11px] text-slate-400 hidden sm:block">Interactive Orrery &bull; Real Keplerian Period Ratios</p>
+        </div>
+      </div>
+
+      <!-- Artistic Scale Disclosure Badge -->
+      <button id="btn-scale-info" class="glass-pill hover:bg-slate-800/80 transition px-3 py-2 rounded-xl flex items-center gap-2 text-xs text-amber-300/90 border border-amber-500/30 shadow-lg" title="Click to read about orbital and size scaling">
+        <i class="fa-solid fa-scale-balanced text-amber-400"></i>
+        <span class="hidden md:inline font-medium">Scale Note: Compressed Orbits &amp; Enlarged Planets</span>
+        <span class="md:hidden font-medium">Scale Note</span>
+        <i class="fa-solid fa-circle-info text-amber-400/70 text-[11px]"></i>
+      </button>
+    </div>
+
+    <!-- Right Header Controls: Sim Clock, Camera Views & README Modal -->
+    <div class="flex items-center gap-2 pointer-events-auto">
+      <!-- Simulated Mission Clock -->
+      <div class="glass-panel px-3 py-1.5 rounded-xl hidden lg:flex items-center gap-3 text-xs">
+        <div class="flex items-center gap-1.5 text-slate-400">
+          <i class="fa-regular fa-clock text-sky-400"></i>
+          <span>Elapsed:</span>
+        </div>
+        <span id="sim-date-display" class="font-mono font-medium text-sky-300">Year 0.00 (0 d)</span>
+      </div>
+
+      <!-- Camera Preset Dropdown / Buttons -->
+      <div class="glass-panel p-1 rounded-xl flex items-center gap-1">
+        <button id="cam-overview" class="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-white/10 transition flex items-center gap-1.5" title="Reset Camera to Angled Overview">
+          <i class="fa-solid fa-expand text-sky-400"></i>
+          <span class="hidden sm:inline">Overview</span>
+        </button>
+        <button id="cam-top" class="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-white/10 transition flex items-center gap-1.5" title="Top-Down Ecliptic Plane View">
+          <i class="fa-regular fa-compass text-indigo-400"></i>
+          <span class="hidden sm:inline">Top-Down</span>
+        </button>
+        <button id="cam-inner" class="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:bg-white/10 transition hidden sm:flex items-center gap-1.5" title="Focus on Inner Rocky Planets">
+          <i class="fa-solid fa-bullseye text-emerald-400"></i>
+          <span>Inner System</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Quick-Select Celestial Bar (Left / Top-Center on mobile) -->
+  <nav aria-label="Celestial Body Selector" class="fixed left-3 top-20 bottom-28 z-20 hidden md:flex flex-col justify-center pointer-events-none">
+    <div class="glass-panel p-1.5 rounded-2xl flex flex-col gap-1 pointer-events-auto max-h-full overflow-y-auto" id="planet-nav-desktop">
+      <!-- Dynamically populated buttons for Sun + 8 planets -->
+    </div>
+  </nav>
+
+  <!-- Mobile Horizontal Planet Selector Bar -->
+  <div class="fixed top-16 left-0 right-0 z-20 md:hidden px-3 pointer-events-none">
+    <div class="glass-panel p-1.5 rounded-xl flex items-center gap-1.5 overflow-x-auto pointer-events-auto no-scrollbar" id="planet-nav-mobile">
+      <!-- Dynamically populated for mobile -->
+    </div>
+  </div>
+
+  <!-- Right Side Planet Information Panel (With 3 Interactive Sections: Overview, Moons, Satellites) -->
+  <aside id="info-panel" class="fixed top-28 md:top-20 right-3 bottom-24 md:bottom-24 w-[calc(100vw-1.5rem)] sm:w-[420px] z-30 pointer-events-none flex flex-col justify-end md:justify-start transition-all duration-300">
+    <div class="glass-panel rounded-2xl overflow-hidden flex flex-col max-h-[66vh] md:max-h-full pointer-events-auto border border-slate-700/60 shadow-2xl">
+      
+      <!-- Panel Header with Planet Badge & Close/Minimize -->
+      <div class="p-3.5 sm:p-4 border-b border-slate-700/50 flex items-center justify-between bg-gradient-to-r from-slate-900/90 to-slate-800/50">
+        <div class="flex items-center gap-3">
+          <div id="info-color-badge" class="w-10 h-10 rounded-xl flex items-center justify-center shadow-inner border border-white/15 relative overflow-hidden">
+            <span id="info-icon" class="text-lg">☀️</span>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 id="info-name" class="font-display font-bold text-lg text-white leading-tight">The Sun</h2>
+              <span id="info-tracking-badge" class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                Tracking
+              </span>
+            </div>
+            <p id="info-type" class="text-xs text-sky-300 font-medium">G2V Main-Sequence Star</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1">
+          <button id="btn-toggle-panel-body" class="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition md:hidden" title="Collapse/Expand Details">
+            <i id="icon-toggle-panel" class="fa-solid fa-chevron-down text-xs"></i>
+          </button>
+          <button id="btn-unfocus" class="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition" title="Release Camera Lock">
+            <i class="fa-solid fa-xmark text-sm"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- 3-Option Interactive Section Selector Bar (Appears when any planet is pressed) -->
+      <div class="px-3.5 py-2 bg-slate-950/75 border-b border-slate-800/80 grid grid-cols-3 gap-1.5" role="tablist">
+        <button id="tab-btn-overview" data-tab="overview" class="planet-tab-btn tab-btn-active px-2 py-2 rounded-xl border border-slate-700/60 text-[11px] font-semibold text-slate-300 hover:text-white transition flex flex-col items-center justify-center gap-0.5">
+          <div class="flex items-center gap-1.5">
+            <i class="fa-solid fa-globe text-sky-400"></i>
+            <span>Overview</span>
+          </div>
+          <span class="text-[9px] font-mono text-slate-400">Telemetry</span>
+        </button>
+
+        <button id="tab-btn-moons" data-tab="moons" class="planet-tab-btn px-2 py-2 rounded-xl border border-slate-800/80 bg-slate-900/50 text-[11px] font-semibold text-slate-300 hover:text-white transition flex flex-col items-center justify-center gap-0.5">
+          <div class="flex items-center gap-1.5">
+            <i class="fa-solid fa-moon text-amber-300"></i>
+            <span>Moons</span>
+          </div>
+          <span id="tab-badge-moons" class="text-[9px] font-mono px-1.5 rounded bg-amber-500/20 text-amber-300">1 Total</span>
+        </button>
+
+        <button id="tab-btn-satellites" data-tab="satellites" class="planet-tab-btn px-2 py-2 rounded-xl border border-slate-800/80 bg-slate-900/50 text-[11px] font-semibold text-slate-300 hover:text-white transition flex flex-col items-center justify-center gap-0.5">
+          <div class="flex items-center gap-1.5">
+            <i class="fa-solid fa-satellite text-cyan-400"></i>
+            <span>Satellites</span>
+          </div>
+          <span id="tab-badge-satellites" class="text-[9px] font-mono px-1.5 rounded bg-cyan-500/20 text-cyan-300">5 Probes</span>
+        </button>
+      </div>
+
+      <!-- Scrollable Telemetry, Moons & Satellites Body -->
+      <div id="info-panel-body" class="p-4 overflow-y-auto space-y-4 text-xs">
+        
+        <!-- ==================== TAB 1: OVERVIEW & TELEMETRY ==================== -->
+        <div id="tab-pane-overview" class="space-y-4">
+          <!-- Description -->
+          <p id="info-desc" class="text-slate-300 leading-relaxed text-[13px]">
+            The Sun is the star at the heart of our Solar System. Its gravity holds the solar system together, keeping everything from the biggest planets to the smallest bits of debris in its orbit.
+          </p>
+
+          <!-- Quick Jump Callout to Moons & Satellites -->
+          <div class="grid grid-cols-2 gap-2">
+            <button id="overview-jump-moons" class="p-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-left transition flex items-center justify-between group">
+              <div>
+                <span class="text-[10px] uppercase tracking-wider text-amber-300/80 block">Natural Moons</span>
+                <span id="overview-moons-count" class="font-mono font-bold text-sm text-amber-200">1 Moon</span>
+              </div>
+              <i class="fa-solid fa-arrow-right text-amber-400 group-hover:translate-x-0.5 transition"></i>
+            </button>
+            <button id="overview-jump-sats" class="p-2.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-left transition flex items-center justify-between group">
+              <div>
+                <span class="text-[10px] uppercase tracking-wider text-cyan-300/80 block">Spacecraft / Sats</span>
+                <span id="overview-sats-count" class="font-mono font-bold text-sm text-cyan-200">5 Missions</span>
+              </div>
+              <i class="fa-solid fa-arrow-right text-cyan-400 group-hover:translate-x-0.5 transition"></i>
+            </button>
+          </div>
+
+          <!-- Primary Telemetry Grid -->
+          <div class="grid grid-cols-2 gap-2.5">
+            <div class="bg-slate-900/70 border border-slate-800 p-2.5 rounded-xl">
+              <span class="text-[10px] uppercase tracking-wider text-slate-400 block">Actual Diameter</span>
+              <span id="info-diameter" class="font-mono font-semibold text-sm text-white mt-0.5 block">1,392,700 km</span>
+              <span id="info-diameter-rel" class="text-[11px] text-sky-400">109.2 × Earth</span>
+            </div>
+
+            <div class="bg-slate-900/70 border border-slate-800 p-2.5 rounded-xl">
+              <span class="text-[10px] uppercase tracking-wider text-slate-400 block">Distance from Sun</span>
+              <span id="info-distance" class="font-mono font-semibold text-sm text-white mt-0.5 block">0.00 AU</span>
+              <span id="info-distance-km" class="text-[11px] text-slate-400">System Center</span>
+            </div>
+
+            <div class="bg-slate-900/70 border border-slate-800 p-2.5 rounded-xl">
+              <span class="text-[10px] uppercase tracking-wider text-slate-400 block">Orbital Period</span>
+              <span id="info-orbit" class="font-mono font-semibold text-sm text-white mt-0.5 block">230M Years</span>
+              <span id="info-velocity" class="text-[11px] text-emerald-400">Galactic Center</span>
+            </div>
+
+            <div class="bg-slate-900/70 border border-slate-800 p-2.5 rounded-xl">
+              <span class="text-[10px] uppercase tracking-wider text-slate-400 block">Rotation Period</span>
+              <span id="info-rotation" class="font-mono font-semibold text-sm text-white mt-0.5 block">25.05 Days</span>
+              <span id="info-tilt" class="text-[11px] text-amber-300">Axial Tilt: 7.25°</span>
+            </div>
+
+            <div class="bg-slate-900/70 border border-slate-800 p-2.5 rounded-xl">
+              <span class="text-[10px] uppercase tracking-wider text-slate-400 block">Temperature</span>
+              <span id="info-temp" class="font-mono font-semibold text-sm text-white mt-0.5 block">5,500 °C</span>
+              <span class="text-[11px] text-slate-400">Photosphere Mean</span>
+            </div>
+
+            <div class="bg-slate-900/70 border border-slate-800 p-2.5 rounded-xl">
+              <span class="text-[10px] uppercase tracking-wider text-slate-400 block">Moons &amp; Gravity</span>
+              <span id="info-moons" class="font-mono font-semibold text-sm text-white mt-0.5 block">8 Planets</span>
+              <span id="info-gravity" class="text-[11px] text-purple-300">Gravity: 274 m/s²</span>
+            </div>
+          </div>
+
+          <!-- Size Comparison Visual Bar -->
+          <div class="bg-slate-900/60 border border-slate-800/80 p-3 rounded-xl space-y-2">
+            <div class="flex items-center justify-between text-[11px]">
+              <span class="text-slate-400 font-medium">Relative Planetary Size (Log Scale)</span>
+              <span id="info-scale-note" class="font-mono text-sky-300">109.2x Earth</span>
+            </div>
+            <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+              <div id="info-size-bar" class="h-full bg-gradient-to-r from-sky-400 to-indigo-500 rounded-full transition-all duration-500" style="width: 100%"></div>
+            </div>
+          </div>
+
+          <!-- Live Simulated Telemetry Box -->
+          <div class="bg-sky-950/30 border border-sky-500/20 p-3 rounded-xl flex items-center justify-between">
+            <div>
+              <span class="text-[10px] uppercase tracking-wider text-sky-300/80 block">Live Heliocentric Angle</span>
+              <span id="info-live-angle" class="font-mono text-sm font-semibold text-sky-200">0.0°</span>
+            </div>
+            <div class="text-right">
+              <span class="text-[10px] uppercase tracking-wider text-sky-300/80 block">Sunlight Travel Time</span>
+              <span id="info-light-time" class="font-mono text-sm font-semibold text-amber-300">0 min 0 sec</span>
+            </div>
+          </div>
+
+          <!-- Key Scientific Facts -->
+          <div>
+            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
+              <i class="fa-solid fa-atom text-sky-400"></i> Key Planetary Facts
+            </h3>
+            <ul id="info-facts" class="space-y-1.5 text-slate-300 text-xs">
+              <!-- Populated dynamically -->
+            </ul>
+          </div>
+        </div>
+
+        <!-- ==================== TAB 2: NATURAL MOONS ==================== -->
+        <div id="tab-pane-moons" class="hidden space-y-3.5">
+          <!-- Total Moons Summary Banner -->
+          <div class="bg-gradient-to-br from-amber-950/40 via-slate-900/80 to-slate-900/90 border border-amber-500/30 rounded-xl p-3.5 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <div>
+                <span class="text-[10px] font-mono uppercase tracking-wider text-amber-300/90 block">IAU Confirmed Natural Satellites</span>
+                <h3 id="moons-total-heading" class="font-display font-bold text-base text-white mt-0.5">1 Confirmed Moon</h3>
+              </div>
+              <div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300 font-mono font-bold text-sm" id="moons-count-circle">
+                1
+              </div>
+            </div>
+            <p id="moons-system-summary" class="text-xs text-slate-300 leading-relaxed"></p>
+
+            <!-- 3D Moon Controls -->
+            <div class="flex flex-wrap items-center gap-2 pt-1">
+              <button id="btn-zoom-moons" class="flex-1 py-1.5 px-2.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/40 font-medium text-[11px] transition flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-magnifying-glass-plus"></i>
+                <span>Zoom to Moon Orbits</span>
+              </button>
+              <button id="btn-toggle-moon-orbits" class="py-1.5 px-2.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-600/60 font-medium text-[11px] transition flex items-center gap-1.5">
+                <i class="fa-solid fa-circle-nodes text-amber-400"></i>
+                <span id="moon-orbits-btn-label">3D Orbits: ON</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Major Moons Interactive List -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">3D Modeled Major Moons (Click to Track)</span>
+              <span class="text-[10px] font-mono text-amber-300/80">Color &amp; Orbit</span>
+            </div>
+            <div id="moons-cards-container" class="space-y-2.5">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== TAB 3: SATELLITES & PROBES ==================== -->
+        <div id="tab-pane-satellites" class="hidden space-y-3.5">
+          <!-- Total Satellites & Spacecraft Summary Banner -->
+          <div class="bg-gradient-to-br from-cyan-950/45 via-slate-900/80 to-slate-900/90 border border-cyan-500/30 rounded-xl p-3.5 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <div>
+                <span class="text-[10px] font-mono uppercase tracking-wider text-cyan-300/90 block">Orbital &amp; Planetary Missions</span>
+                <h3 id="sats-total-heading" class="font-display font-bold text-base text-white mt-0.5">Artificial Satellites &amp; Probes</h3>
+              </div>
+              <div class="px-2.5 py-1.5 rounded-xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 font-mono font-bold text-xs" id="sats-count-circle">
+                10,500+
+              </div>
+            </div>
+            <p id="sats-system-summary" class="text-xs text-slate-300 leading-relaxed"></p>
+
+            <!-- 3D Spacecraft Controls -->
+            <div class="flex flex-wrap items-center gap-2 pt-1">
+              <button id="btn-zoom-sats" class="flex-1 py-1.5 px-2.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-400/40 font-medium text-[11px] transition flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-satellite-dish"></i>
+                <span>Inspect 3D Probes</span>
+              </button>
+              <button id="btn-toggle-sat-orbits" class="py-1.5 px-2.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-600/60 font-medium text-[11px] transition flex items-center gap-1.5">
+                <i class="fa-solid fa-route text-cyan-400"></i>
+                <span id="sat-orbits-btn-label">3D Probes: ON</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Spacecraft & Satellites Interactive List -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Related Satellites &amp; Missions (Click to Highlight)</span>
+              <span class="text-[10px] font-mono text-cyan-300/80">Agency &amp; Status</span>
+            </div>
+            <div id="sats-cards-container" class="space-y-2.5">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- Bottom Simulation Controls Dock -->
+  <footer class="fixed bottom-3 left-3 right-3 z-30 pointer-events-none flex flex-col sm:flex-row items-center justify-center gap-2">
+    <div class="glass-panel px-3 sm:px-4 py-2.5 rounded-2xl pointer-events-auto flex flex-wrap items-center justify-center gap-3 sm:gap-5 w-full sm:w-auto max-w-4xl">
+      
+      <!-- Play / Pause Button -->
+      <div class="flex items-center gap-2">
+        <button id="btn-play-pause" class="w-10 h-10 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold flex items-center justify-center shadow-lg shadow-sky-500/25 transition active:scale-95" title="Pause / Resume Animation (Spacebar)">
+          <i id="icon-play-pause" class="fa-solid fa-pause text-sm"></i>
+        </button>
+      </div>
+
+      <!-- Orbital Speed Slider & Readout -->
+      <div class="flex items-center gap-3 flex-1 sm:flex-initial min-w-[180px] sm:min-w-[230px]">
+        <div class="flex flex-col w-full">
+          <div class="flex items-center justify-between text-[11px] mb-1">
+            <span class="text-slate-400 font-medium flex items-center gap-1">
+              <i class="fa-solid fa-gauge-high text-sky-400"></i> Orbital Speed
+            </span>
+            <span id="speed-readout" class="font-mono font-semibold text-sky-300">10 d/sec (1.0x)</span>
+          </div>
+          <input id="speed-slider" type="range" min="-50" max="200" step="0.5" value="10" aria-label="Orbital Speed" />
+        </div>
+      </div>
+
+      <!-- Speed Presets -->
+      <div class="hidden lg:flex items-center gap-1 bg-slate-900/80 p-1 rounded-xl border border-slate-800 text-[11px] font-mono">
+        <button data-speed="1" class="speed-preset px-2 py-1 rounded-lg text-slate-400 hover:text-white transition">0.1x</button>
+        <button data-speed="10" class="speed-preset px-2 py-1 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30 transition">1x</button>
+        <button data-speed="50" class="speed-preset px-2 py-1 rounded-lg text-slate-400 hover:text-white transition">5x</button>
+        <button data-speed="150" class="speed-preset px-2 py-1 rounded-lg text-slate-400 hover:text-white transition">15x</button>
+      </div>
+
+      <div class="h-6 w-[1px] bg-slate-700/60 hidden sm:block"></div>
+
+      <!-- Visual Toggles: Orbits, Labels, Scale Mode -->
+      <div class="flex items-center gap-1.5">
+        <button id="toggle-orbits" class="px-2.5 py-1.5 rounded-xl text-xs font-medium bg-sky-500/20 text-sky-300 border border-sky-400/30 hover:bg-sky-500/30 transition flex items-center gap-1.5" title="Toggle Orbital Path Lines">
+          <i class="fa-solid fa-circle-notch text-[11px]"></i>
+          <span>Orbits</span>
+        </button>
+
+        <button id="toggle-labels" class="px-2.5 py-1.5 rounded-xl text-xs font-medium bg-sky-500/20 text-sky-300 border border-sky-400/30 hover:bg-sky-500/30 transition flex items-center gap-1.5" title="Toggle Planet Name Labels">
+          <i class="fa-solid fa-tag text-[11px]"></i>
+          <span>Labels</span>
+        </button>
+
+        <button id="toggle-grid" class="px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-800/70 text-slate-400 border border-slate-700/60 hover:text-white transition flex items-center gap-1.5" title="Toggle Ecliptic Reference Grid">
+          <i class="fa-solid fa-border-all text-[11px]"></i>
+          <span class="hidden md:inline">Ecliptic Grid</span>
+        </button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Modal 1: Artistic Scale & Scientific Accuracy Explanation -->
+  <div id="modal-scale" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="glass-panel max-w-lg w-full rounded-2xl border border-slate-700 p-6 space-y-4 shadow-2xl selectable-text">
+      <div class="flex items-center justify-between border-b border-slate-700/60 pb-3">
+        <div class="flex items-center gap-2.5">
+          <i class="fa-solid fa-scale-balanced text-amber-400 text-lg"></i>
+          <h3 class="font-display font-bold text-lg text-white">Scientific Accuracy &amp; Visual Scaling</h3>
+        </div>
+        <button id="close-scale-modal" class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs sm:text-sm text-slate-300 leading-relaxed">
+        <p>
+          In real astronomical space, the Solar System is overwhelmingly vast compared to the sizes of the planets. If modeled at a strict 1:1 linear scale where Earth is 1 pixel wide, the Sun would be 109 pixels wide, and Neptune would orbit more than <strong>350,000 pixels (over 90 screens) away</strong>.
+        </p>
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 space-y-2">
+          <h4 class="font-semibold text-amber-300 text-xs uppercase tracking-wider">What is Artistically Approximated:</h4>
+          <ul class="list-disc list-inside space-y-1 text-xs text-slate-300">
+            <li><strong>Compressed Orbital Radii:</strong> Planetary distances from the Sun use a gently compressed non-linear spacing so all 8 planets and their orbital rings can be viewed simultaneously.</li>
+            <li><strong>Enlarged Planetary Radii:</strong> Planets (and Earth's Moon) are magnified relative to the Sun so you can inspect surface textures, cloud bands, axial tilts, and ring systems in 3D.</li>
+          </ul>
+        </div>
+        <div class="bg-emerald-950/30 border border-emerald-500/30 rounded-xl p-3.5 space-y-2">
+          <h4 class="font-semibold text-emerald-300 text-xs uppercase tracking-wider">What is Scientifically Preserved:</h4>
+          <ul class="list-disc list-inside space-y-1 text-xs text-slate-300">
+            <li><strong>Exact Keplerian Orbital Period Ratios:</strong> Mercury completes ~4.15 orbits and Jupiter completes ~0.084 orbits for every 1 Earth orbit ($365.256\text{ days}$).</li>
+            <li><strong>Axial Tilts &amp; Retrograde Spin:</strong> Venus spins clockwise ($177.3^\circ$ tilt), Uranus rolls on its side ($97.8^\circ$ tilt), and Saturn's rings incline at $26.7^\circ$.</li>
+            <li><strong>NASA/JPL Planetary Telemetry:</strong> All figures in the inspector panel reflect true physical measurements.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="pt-2 flex justify-end">
+        <button id="ack-scale-modal" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition">
+          Got It, Return to Simulation
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Project data and simulation logic are kept in separate files. -->
+<script src="js/data.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
